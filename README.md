@@ -32,8 +32,15 @@ bun install --global vercel
 bun install --global 'vcx-cli@https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.1.tar.gz'
 ```
 
-Keep the `vcx-cli@` prefix in the Bun command. Some Bun canary releases reject
-a bare tarball URL as an unsafe package name, even after installing its binary.
+Bun `1.4.0-canary.1` installs vcx, links the binary, then prints an `unsafe
+name` error and exits with a failure. If `vcx --version` prints `0.2.1`, the
+install worked. Upgrade Bun to stop the false error:
+
+```sh
+bun upgrade
+```
+
+Use `bun upgrade --canary` instead if you want to stay on canary builds.
 
 To work from a clone instead:
 
@@ -179,4 +186,5 @@ npm pack --dry-run
 
 The test suite uses a fake Vercel executable and temporary profile directories.
 It never reads your real Vercel login. GitHub Actions runs the suite on Linux,
-macOS, and Windows with Node.js 20, 22, and 24.
+macOS, and Windows with Node.js 20, 22, and 24. It also checks global installs
+with the current stable and canary Bun releases.

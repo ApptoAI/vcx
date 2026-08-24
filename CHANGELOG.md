@@ -2,8 +2,8 @@
 
 ## 0.2.1 - 2026-08-24
 
-- Add a Bun install command with an explicit package name. This avoids an
-  `unsafe name` error in affected Bun canary releases.
+- Document Bun installation and the false `unsafe name` failure in Bun
+  `1.4.0-canary.1`.
 - Test global installation with stable and canary Bun in CI.
 
 ## 0.2.0 - 2026-08-24
