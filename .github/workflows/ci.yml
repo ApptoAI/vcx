@@ -34,3 +34,32 @@ jobs:
       - run: git diff --exit-code -- dist
       - run: npm run typecheck
       - run: npm pack --dry-run
+
+  bun-install:
+    name: Bun ${{ matrix.bun }} global install
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bun:
+          - latest
+          - canary
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+      - run: npm ci
+      - run: npm run build
+      - id: pack
+        shell: bash
+        run: echo "tarball=$(npm pack --silent --pack-destination \"$RUNNER_TEMP\")" >> "$GITHUB_OUTPUT"
+      - shell: bash
+        run: bun install --global "vcx-cli@file:${{ runner.temp }}/${{ steps.pack.outputs.tarball }}"
+      - shell: bash
+        run: test "$(vcx --version)" = "$(node --print \"require('./package.json').version\")"

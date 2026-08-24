@@ -22,8 +22,18 @@ You need Node.js 20 or newer and Vercel CLI.
 
 ```sh
 npm install --global vercel
-npm install --global https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.0.tar.gz
+npm install --global https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.1.tar.gz
 ```
+
+With Bun:
+
+```sh
+bun install --global vercel
+bun install --global 'vcx-cli@https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.1.tar.gz'
+```
+
+Keep the `vcx-cli@` prefix in the Bun command. Some Bun canary releases reject
+a bare tarball URL as an unsafe package name, even after installing its binary.
 
 To work from a clone instead:
 

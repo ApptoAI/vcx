@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-08-24
+
+- Add a Bun install command with an explicit package name. This avoids an
+  `unsafe name` error in affected Bun canary releases.
+- Test global installation with stable and canary Bun in CI.
+
 ## 0.2.0 - 2026-08-24
 
 - Give every profile its own Vercel global-config directory.
