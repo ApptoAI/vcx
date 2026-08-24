@@ -1,24 +1,25 @@
 #!/usr/bin/env node
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { confirm, promptSecret, readStdin } from "./prompt.js";
 import {
   assertProfileName,
+  createStagedProfileDir,
   getConfigDir,
-  getStorePath,
+  getProfileDir,
   type Profile,
+  installStagedProfile,
   readStore,
+  removeProfileData,
   StoreError,
+  withStoreLock,
   writeStore,
+  writeTokenAuth,
 } from "./store.js";
-import {
-  containsExplicitVercelToken,
-  runVercel,
-} from "./vercel.js";
+import { findReservedVercelOption, runVercel } from "./vercel.js";
 
 const { version: VERSION } = createRequire(import.meta.url)("../package.json") as {
   version: string;
@@ -41,33 +42,51 @@ async function main(argv: string[]): Promise<number> {
     printHelp();
     return 0;
   }
-
   if (command === "version" || command === "--version" || command === "-v") {
     process.stdout.write(`${VERSION}\n`);
     return 0;
   }
 
   switch (command) {
-    case "add":
-      return await addProfile(args);
-    case "login":
-      return await loginProfile(args);
-    case "use":
-      return await useProfile(args);
-    case "list":
-      return await listProfiles(args);
-    case "current":
-      return await currentProfile(args);
-    case "remove":
-    case "rm":
-      return await removeProfile(args);
-    case "path":
-      return showPath(args);
+    case "profile":
+    case "profiles":
+      return await profileCommand(args);
     case "exec":
     case "vercel":
       return await explicitExec(args);
     default:
       return await forwardToVercel(argv);
+  }
+}
+
+async function profileCommand(args: string[]): Promise<number> {
+  const [command, ...commandArgs] = args;
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    printProfileHelp();
+    return 0;
+  }
+
+  switch (command) {
+    case "add":
+      return await addProfile(commandArgs);
+    case "login":
+      return await loginProfile(commandArgs);
+    case "use":
+      return await useProfile(commandArgs);
+    case "list":
+    case "ls":
+      return await listProfiles(commandArgs);
+    case "current":
+      return await currentProfile(commandArgs);
+    case "remove":
+    case "rm":
+      return await removeProfile(commandArgs);
+    case "path":
+      return showPath(commandArgs);
+    default:
+      throw new CliError(
+        `Unknown profile command "${command}". Run \`vcx profile --help\`.`,
+      );
   }
 }
 
@@ -80,14 +99,11 @@ async function addProfile(args: string[]): Promise<number> {
     ]),
     values: ["--token"],
   });
-  const name = expectSingleProfileName(parsed.positionals, "add");
+  const name = expectSingleProfileName(parsed.positionals, "profile add");
   const configDir = getConfigDir();
-  const store = await readStore(configDir);
-  const existing = getProfile(store.profiles, name);
-  if (existing && !parsed.flags.has("--force")) {
-    throw new CliError(
-      `Profile "${name}" already exists. Use --force to replace it.`,
-    );
+  const initialStore = await readStore(configDir);
+  if (getProfile(initialStore.profiles, name) && !parsed.flags.has("--force")) {
+    throw profileExistsError(name, "replace it");
   }
 
   const inlineToken = parsed.values.get("--token");
@@ -106,31 +122,46 @@ async function addProfile(args: string[]): Promise<number> {
   }
   assertToken(token);
 
-  let username: string | undefined;
-  if (!parsed.flags.has("--no-verify")) {
-    username = await verifyToken(token);
-  }
+  const stagedDir = await createStagedProfileDir(configDir, `add-${name}`);
+  let installed = false;
+  try {
+    await writeTokenAuth(stagedDir, token);
+    const username = parsed.flags.has("--no-verify")
+      ? undefined
+      : await verifyProfile(stagedDir);
 
-  const now = new Date().toISOString();
-  const profile: Profile = {
-    token,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    ...(username ? { username } : {}),
-  };
-  store.profiles[name] = profile;
-  if (
-    store.activeProfile === null ||
-    parsed.flags.has("--activate")
-  ) {
-    store.activeProfile = name;
-  }
-  await writeStore(store, configDir);
+    await withStoreLock(configDir, async () => {
+      const store = await readStore(configDir);
+      const existing = getProfile(store.profiles, name);
+      if (existing && !parsed.flags.has("--force")) {
+        throw profileExistsError(name, "replace it");
+      }
 
-  process.stdout.write(
-    `Added profile "${name}"${username ? ` (${username})` : ""}.` +
-      `${store.activeProfile === name ? " It is now active." : ""}\n`,
-  );
+      const firstProfile = Object.keys(store.profiles).length === 0;
+      const now = new Date().toISOString();
+      store.profiles[name] = {
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        ...(username ? { username } : {}),
+      };
+      if (store.activeProfile === null || parsed.flags.has("--activate")) {
+        store.activeProfile = name;
+      }
+
+      await installStagedProfile(stagedDir, name, configDir, async () => {
+        await writeStore(store, configDir);
+      });
+      installed = true;
+      if (firstProfile) warnPlaintextStorage(configDir);
+    });
+
+    process.stdout.write(
+      `Added profile "${name}"${username ? ` (${username})` : ""}.` +
+        `${(await readStore(configDir)).activeProfile === name ? " It is now active." : ""}\n`,
+    );
+  } finally {
+    if (!installed) await rm(stagedDir, { recursive: true, force: true });
+  }
   return 0;
 }
 
@@ -142,84 +173,81 @@ async function loginProfile(args: string[]): Promise<number> {
       ["-f", "--force"],
     ]),
   });
-  const name = expectSingleProfileName(parsed.positionals, "login");
+  const name = expectSingleProfileName(parsed.positionals, "profile login");
   const configDir = getConfigDir();
-  const store = await readStore(configDir);
-  const existing = getProfile(store.profiles, name);
-  if (existing && !parsed.flags.has("--force")) {
-    throw new CliError(
-      `Profile "${name}" already exists. Use --force to log in again.`,
-    );
+  const initialStore = await readStore(configDir);
+  if (getProfile(initialStore.profiles, name) && !parsed.flags.has("--force")) {
+    throw profileExistsError(name, "log in again");
   }
 
-  const temporaryConfig = await mkdtemp(join(tmpdir(), "vcx-login-"));
+  const stagedDir = await createStagedProfileDir(configDir, `login-${name}`);
+  let installed = false;
   try {
-    const result = await runVercel(
-      ["--global-config", temporaryConfig, "login"],
-      { clearToken: true },
-    );
+    const result = await runVercel(["login"], { globalConfig: stagedDir });
     if (result.missingBinary) throw missingVercelError();
     if (result.code !== 0) {
       throw new CliError(`Vercel login exited with code ${result.code}.`);
     }
-
-    const authPath = join(temporaryConfig, "auth.json");
-    let token: string;
     try {
-      const auth = JSON.parse(await readFile(authPath, "utf8")) as {
-        token?: unknown;
-      };
-      if (typeof auth.token !== "string") {
-        throw new Error("auth.json does not contain a token");
-      }
-      token = auth.token;
-    } catch (error) {
+      await access(join(stagedDir, "auth.json"));
+    } catch {
       throw new CliError(
-        `Vercel login completed, but vcx could not read its token: ${errorMessage(error)}`,
+        "Vercel login completed without creating auth.json. Update Vercel CLI or report this compatibility issue.",
       );
     }
-    assertToken(token);
-    const username = await verifyToken(token);
-    const now = new Date().toISOString();
-    store.profiles[name] = {
-      token,
-      username,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
-    if (
-      store.activeProfile === null ||
-      parsed.flags.has("--activate")
-    ) {
-      store.activeProfile = name;
-    }
-    await writeStore(store, configDir);
+    const username = await verifyProfile(stagedDir);
+
+    await withStoreLock(configDir, async () => {
+      const store = await readStore(configDir);
+      const existing = getProfile(store.profiles, name);
+      if (existing && !parsed.flags.has("--force")) {
+        throw profileExistsError(name, "log in again");
+      }
+      const firstProfile = Object.keys(store.profiles).length === 0;
+      const now = new Date().toISOString();
+      store.profiles[name] = {
+        username,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      if (store.activeProfile === null || parsed.flags.has("--activate")) {
+        store.activeProfile = name;
+      }
+
+      await installStagedProfile(stagedDir, name, configDir, async () => {
+        await writeStore(store, configDir);
+      });
+      installed = true;
+      if (firstProfile) warnPlaintextStorage(configDir);
+    });
+
     process.stdout.write(
       `Added profile "${name}" (${username}).` +
-        `${store.activeProfile === name ? " It is now active." : ""}\n`,
+        `${(await readStore(configDir)).activeProfile === name ? " It is now active." : ""}\n`,
     );
   } finally {
-    await rm(temporaryConfig, { recursive: true, force: true });
+    if (!installed) await rm(stagedDir, { recursive: true, force: true });
   }
-
   return 0;
 }
 
 async function useProfile(args: string[]): Promise<number> {
   const parsed = parseOptions(args);
-  const name = expectSingleProfileName(parsed.positionals, "use");
+  const name = expectSingleProfileName(parsed.positionals, "profile use");
   const configDir = getConfigDir();
-  const store = await readStore(configDir);
-  requireProfile(store.profiles, name);
-  store.activeProfile = name;
-  await writeStore(store, configDir);
+  await withStoreLock(configDir, async () => {
+    const store = await readStore(configDir);
+    requireProfile(store.profiles, name);
+    store.activeProfile = name;
+    await writeStore(store, configDir);
+  });
   process.stdout.write(`Active profile: ${name}\n`);
   return 0;
 }
 
 async function listProfiles(args: string[]): Promise<number> {
   const parsed = parseOptions(args, { boolean: ["--json"] });
-  expectNoPositionals(parsed.positionals, "list");
+  expectNoPositionals(parsed.positionals, "profile list");
   const store = await readStore();
   const profiles = Object.entries(store.profiles)
     .sort(([left], [right]) => left.localeCompare(right))
@@ -237,15 +265,16 @@ async function listProfiles(args: string[]): Promise<number> {
     );
     return 0;
   }
-
   if (profiles.length === 0) {
-    process.stdout.write("No profiles. Add one with `vcx login <name>`.\n");
+    process.stdout.write(
+      "No profiles. Add one with `vcx profile login <name>`.\n",
+    );
     return 0;
   }
 
   const nameWidth = Math.max(7, ...profiles.map((profile) => profile.name.length));
   process.stdout.write(
-    `${"PROFILE".padEnd(nameWidth)}  ACCOUNT\n` +
+    `  ${"PROFILE".padEnd(nameWidth)}  ACCOUNT\n` +
       profiles
         .map(
           (profile) =>
@@ -259,23 +288,16 @@ async function listProfiles(args: string[]): Promise<number> {
 
 async function currentProfile(args: string[]): Promise<number> {
   const parsed = parseOptions(args, { boolean: ["--json"] });
-  expectNoPositionals(parsed.positionals, "current");
+  expectNoPositionals(parsed.positionals, "profile current");
   const store = await readStore();
   const name = process.env.VCX_PROFILE ?? store.activeProfile;
-  const profile = name ? getProfile(store.profiles, name) : undefined;
-
   if (!name) {
-    if (parsed.flags.has("--json")) {
-      process.stdout.write("null\n");
-      return 0;
-    }
-    throw new CliError("No active profile. Run `vcx use <name>`.");
+    if (parsed.flags.has("--json")) process.stdout.write("null\n");
+    else process.stderr.write("vcx: No active profile. Run `vcx profile use <name>`.\n");
+    return 1;
   }
-  if (!profile) {
-    throw new CliError(
-      `Unknown profile "${name}". Run \`vcx list\` to see saved profiles.`,
-    );
-  }
+  assertProfileName(name);
+  const profile = requireProfile(store.profiles, name);
 
   if (parsed.flags.has("--json")) {
     process.stdout.write(
@@ -300,37 +322,41 @@ async function removeProfile(args: string[]): Promise<number> {
     boolean: ["--force"],
     aliases: new Map([["-f", "--force"]]),
   });
-  const name = expectSingleProfileName(parsed.positionals, "remove");
+  const name = expectSingleProfileName(parsed.positionals, "profile remove");
   const configDir = getConfigDir();
-  const store = await readStore(configDir);
-  requireProfile(store.profiles, name);
+  const initialStore = await readStore(configDir);
+  requireProfile(initialStore.profiles, name);
 
   if (!parsed.flags.has("--force")) {
+    if (!process.stdin.isTTY || !process.stderr.isTTY) {
+      throw new CliError("Refusing non-interactive removal without --force.");
+    }
     const approved = await confirm(
-      `Remove profile "${name}" and its plaintext token?`,
+      `Remove profile "${name}" and its plaintext Vercel config?`,
     );
     if (!approved) {
-      if (!process.stdin.isTTY) {
-        throw new CliError("Refusing non-interactive removal without --force.");
-      }
-      process.stdout.write("Cancelled.\n");
-      return 0;
+      process.stderr.write("Cancelled.\n");
+      return 1;
     }
   }
 
-  delete store.profiles[name];
-  if (store.activeProfile === name) {
-    store.activeProfile = null;
-  }
-  await writeStore(store, configDir);
+  await withStoreLock(configDir, async () => {
+    const store = await readStore(configDir);
+    requireProfile(store.profiles, name);
+    delete store.profiles[name];
+    if (store.activeProfile === name) store.activeProfile = null;
+    await removeProfileData(name, configDir, async () => {
+      await writeStore(store, configDir);
+    });
+  });
   process.stdout.write(`Removed profile "${name}".\n`);
   return 0;
 }
 
 function showPath(args: string[]): number {
   const parsed = parseOptions(args);
-  expectNoPositionals(parsed.positionals, "path");
-  process.stdout.write(`${getStorePath()}\n`);
+  expectNoPositionals(parsed.positionals, "profile path");
+  process.stdout.write(`${getConfigDir()}\n`);
   return 0;
 }
 
@@ -352,7 +378,9 @@ async function explicitExec(args: string[]): Promise<number> {
       continue;
     }
     if (argument?.startsWith("--profile=")) {
-      profileName = argument.slice("--profile=".length);
+      const value = argument.slice("--profile=".length);
+      if (!value) throw new CliError("--profile requires a profile name.");
+      profileName = value;
       index += 1;
       continue;
     }
@@ -370,39 +398,44 @@ async function forwardToVercel(
   args: string[],
   requestedProfile?: string,
 ): Promise<number> {
-  if (containsExplicitVercelToken(args)) {
+  const reservedOption = findReservedVercelOption(args);
+  if (reservedOption) {
     throw new CliError(
-      "Do not pass --token through vcx; select a profile or run `vercel` directly.",
+      `Do not pass ${reservedOption} through vcx. Select a profile or run \`vercel\` directly.`,
     );
   }
 
   const store = await readStore();
-  const profileName =
-    requestedProfile ?? process.env.VCX_PROFILE ?? store.activeProfile;
+  const profileName = requestedProfile ?? process.env.VCX_PROFILE ?? store.activeProfile;
   if (!profileName) {
     throw new CliError(
-      "No active profile. Run `vcx login <name>` or `vcx use <name>`.",
+      "No active profile. Run `vcx profile login <name>` or `vcx profile use <name>`.",
     );
   }
   assertProfileName(profileName);
-  const profile = requireProfile(store.profiles, profileName);
-  const result = await runVercel(args, { token: profile.token });
+  requireProfile(store.profiles, profileName);
+  const result = await runVercel(args, {
+    globalConfig: getProfileDir(profileName),
+  });
   if (result.missingBinary) throw missingVercelError();
   return result.code;
 }
 
-async function verifyToken(token: string): Promise<string> {
-  const result = await runVercel(["whoami"], { token, capture: true });
+async function verifyProfile(profileDir: string): Promise<string> {
+  const result = await runVercel(["whoami"], {
+    globalConfig: profileDir,
+    capture: true,
+  });
   if (result.missingBinary) throw missingVercelError();
   if (result.code !== 0) {
     const detail = cleanOutput(result.stderr);
     throw new CliError(
-      `Vercel rejected the token${detail ? `: ${detail}` : "."}`,
+      `Vercel rejected the profile${detail ? `: ${detail}` : "."}`,
     );
   }
   const username = cleanOutput(result.stdout).split("\n").filter(Boolean).at(-1);
   if (!username) {
-    throw new CliError("Vercel verified the token but returned no account name.");
+    throw new CliError("Vercel verified the profile but returned no account name.");
   }
   return username;
 }
@@ -447,8 +480,14 @@ function parseOptions(
       continue;
     }
     if (values.has(name)) {
-      const value = inlineValue ?? args[index + 1];
-      if (value === undefined) throw new CliError(`${rawName} requires a value.`);
+      const nextValue = args[index + 1];
+      const value = inlineValue ?? nextValue;
+      if (
+        value === undefined ||
+        (inlineValue === undefined && value.startsWith("-"))
+      ) {
+        throw new CliError(`${rawName} requires a value.`);
+      }
       parsed.values.set(name, value);
       if (inlineValue === undefined) index += 1;
       continue;
@@ -478,9 +517,7 @@ function expectSingleProfileName(positionals: string[], command: string): string
 }
 
 function expectNoPositionals(positionals: string[], command: string): void {
-  if (positionals.length > 0) {
-    throw new CliError(`Usage: vcx ${command}`);
-  }
+  if (positionals.length > 0) throw new CliError(`Usage: vcx ${command}`);
 }
 
 function requireProfile(
@@ -490,7 +527,7 @@ function requireProfile(
   const profile = getProfile(profiles, name);
   if (!profile) {
     throw new CliError(
-      `Unknown profile "${name}". Run \`vcx list\` to see saved profiles.`,
+      `Unknown profile "${name}". Run \`vcx profile list\` to see saved profiles.`,
     );
   }
   return profile;
@@ -503,19 +540,28 @@ function getProfile(
   return Object.hasOwn(profiles, name) ? profiles[name] : undefined;
 }
 
+function profileExistsError(name: string, action: string): CliError {
+  return new CliError(
+    `Profile "${name}" already exists. Use --force to ${action}.`,
+  );
+}
+
 function assertToken(token: string): void {
   if (!token) throw new CliError("The Vercel token cannot be empty.");
-  if (!/^\w+$/.test(token)) {
-    throw new CliError(
-      "The Vercel token is invalid. Tokens may contain only letters, numbers, and underscores.",
-    );
+  if (token.length > 8_192) throw new CliError("The Vercel token is too long.");
+  if (/[\s\u0000-\u001f\u007f]/.test(token)) {
+    throw new CliError("The Vercel token cannot contain whitespace or control characters.");
   }
 }
 
+function warnPlaintextStorage(configDir: string): void {
+  process.stderr.write(
+    `Warning: vcx stores Vercel credentials as plaintext under ${configDir}.\n`,
+  );
+}
+
 function cleanOutput(output: string): string {
-  return output
-    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
-    .trim();
+  return output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "").trim();
 }
 
 function missingVercelError(): CliError {
@@ -529,39 +575,54 @@ function errorMessage(error: unknown): string {
 }
 
 function printHelp(): void {
-  process.stdout.write(`vcx ${VERSION} — named accounts for the Vercel CLI
+  process.stdout.write(`vcx ${VERSION} - named accounts for the Vercel CLI
 
 Usage:
-  vcx login <profile> [--activate]       Sign in through Vercel's login flow
-  vcx add <profile> [options]            Save an existing Vercel token
-  vcx use <profile>                      Set the active profile
-  vcx list [--json]                      List profiles (never prints tokens)
-  vcx current [--json]                   Show the selected profile
-  vcx remove <profile> [--force]         Delete a profile and its token
-  vcx path                               Print the plaintext credential path
-  vcx exec [-p <profile>] -- <args...>   Run Vercel with a selected profile
+  vcx profile <command>                  Manage named profiles
+  vcx exec [-p <profile>] -- <args...>   Run Vercel with one profile
   vcx <vercel command...>                Run Vercel with the active profile
-
-Add options:
-  --token <token>       Read a token from the command line
-  --token-stdin         Read a token from standard input
-  --no-verify           Save without calling \`vercel whoami\`
-  -a, --activate        Make the new profile active
-  -f, --force           Replace an existing profile
+  vcx help                               Show this help
+  vcx version                            Print the vcx version
 
 Examples:
-  vcx login personal
-  vcx add work --token-stdin
-  vcx use work
+  vcx profile login personal
+  vcx profile use work
   vcx deploy --prod
   vcx exec --profile personal -- list
+
+Run \`vcx profile --help\` for profile commands.
 
 Environment:
   VCX_PROFILE           Override the active profile for one command
   VCX_CONFIG_DIR        Override the vcx data directory
-  VCX_VERCEL_BIN        Override the Vercel executable (mainly for testing)
+  VCX_VERCEL_BIN        Override the Vercel executable
 
-V1 stores tokens as plaintext JSON with user-only file permissions.
+V1 stores each profile's Vercel config as plaintext with user-only permissions.
+`);
+}
+
+function printProfileHelp(): void {
+  process.stdout.write(`Manage vcx profiles
+
+Usage:
+  vcx profile login <name> [options]     Sign in through Vercel's login flow
+  vcx profile add <name> [options]       Save an existing Vercel token
+  vcx profile use <name>                 Set the active profile
+  vcx profile list [--json]              List profiles without credentials
+  vcx profile current [--json]           Show the selected profile
+  vcx profile remove <name> [--force]    Delete a profile and its Vercel config
+  vcx profile path                       Print the vcx data directory
+
+Add options:
+  --token <token>       Read a token from the command line
+  --token-stdin         Read a token from standard input
+  --no-verify           Save without a network call to \`vercel whoami\`
+  -a, --activate        Make the new profile active
+  -f, --force           Replace an existing profile
+
+Login options:
+  -a, --activate        Make the new profile active
+  -f, --force           Replace an existing profile
 `);
 }
 

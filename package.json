@@ -1,6 +1,6 @@
 {
   "name": "vcx-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Named Vercel CLI accounts on one device",
   "type": "module",
   "bin": {
@@ -9,12 +9,13 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node --eval \"import('node:fs/promises').then(fs => fs.chmod('dist/cli.js', 0o755))\"",
     "clean": "node --eval \"import('node:fs/promises').then(fs => fs.rm('dist', { recursive: true, force: true }))\"",
-    "prepack": "npm run clean && npm run build",
+    "prepare": "npm run clean && npm run build",
     "test": "npm run clean && npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -25,11 +26,24 @@
     "profiles"
   ],
   "license": "MIT",
+  "author": "akrupa-appto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akrupa-appto/vcx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/akrupa-appto/vcx/issues"
+  },
+  "homepage": "https://github.com/akrupa-appto/vcx#readme",
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "cross-spawn": "^7.0.6"
+  },
   "devDependencies": {
-    "@types/node": "^24.13.1",
-    "typescript": "^7.0.2"
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^20.17.57",
+    "typescript": "^5.9.3"
   }
 }
