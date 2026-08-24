@@ -22,7 +22,7 @@ You need Node.js 20 or newer and Vercel CLI.
 
 ```sh
 npm install --global vercel
-npm install --global github:akrupa-appto/vcx
+npm install --global https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.0.tar.gz
 ```
 
 To work from a clone instead:
