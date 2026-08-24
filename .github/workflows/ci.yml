@@ -56,10 +56,9 @@ jobs:
           bun-version: ${{ matrix.bun }}
       - run: npm ci
       - run: npm run build
-      - id: pack
-        shell: bash
-        run: echo "tarball=$(npm pack --silent --pack-destination \"$RUNNER_TEMP\")" >> "$GITHUB_OUTPUT"
       - shell: bash
-        run: bun install --global "vcx-cli@file:${{ runner.temp }}/${{ steps.pack.outputs.tarball }}"
-      - shell: bash
-        run: test "$(vcx --version)" = "$(node --print \"require('./package.json').version\")"
+        run: |
+          tarball=$(npm pack --silent --pack-destination "$RUNNER_TEMP")
+          bun install --global "vcx-cli@file:$RUNNER_TEMP/$tarball"
+          expected=$(node --print "require('./package.json').version")
+          test "$(vcx --version)" = "$expected"
