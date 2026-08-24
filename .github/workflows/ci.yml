@@ -42,6 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         bun:
+          - 1.4.0
           - latest
           - canary
 
@@ -54,11 +55,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ matrix.bun }}
-      - run: npm ci
-      - run: npm run build
       - shell: bash
         run: |
-          tarball=$(npm pack --silent --pack-destination "$RUNNER_TEMP")
-          bun install --global "vcx-cli@file:$RUNNER_TEMP/$tarball"
+          bun install --global "github:$GITHUB_REPOSITORY#$GITHUB_SHA"
           expected=$(node --print "require('./package.json').version")
           test "$(vcx --version)" = "$expected"

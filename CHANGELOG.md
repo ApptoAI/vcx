@@ -2,9 +2,9 @@
 
 ## 0.2.1 - 2026-08-24
 
-- Document Bun installation and the false `unsafe name` failure in Bun
-  `1.4.0-canary.1`.
-- Test global installation with stable and canary Bun in CI.
+- Use Bun's `github:` dependency form. It avoids the false `unsafe name`
+  failure that Bun 1.4.0 returns for remote tarballs.
+- Test the GitHub install with Bun 1.4.0, latest stable, and latest canary in CI.
 
 ## 0.2.0 - 2026-08-24
 
