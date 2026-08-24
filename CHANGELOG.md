@@ -7,6 +7,7 @@
 - Run npm command shims on Windows through `cross-spawn`.
 - Add locking, signal forwarding, legacy-store migration, and safer prompts.
 - Add CI for Node.js 20, 22, and 24 on Linux, macOS, and Windows.
+- Ship compiled files so GitHub installs do not need TypeScript.
 
 ## 0.1.0 - 2026-08-24
 
