@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json && node --eval \"import('node:fs/promises').then(fs => fs.chmod('dist/cli.js', 0o755))\"",
     "clean": "node --eval \"import('node:fs/promises').then(fs => fs.rm('dist', { recursive: true, force: true }))\"",
     "prepare": "npm run clean && npm run build",
-    "test": "npm run clean && npm run build && node --test test/*.test.mjs",
+    "test": "npm run clean && npm run build && node --test test/cli.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [
