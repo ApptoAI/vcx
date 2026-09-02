@@ -1,6 +1,6 @@
 {
   "name": "vcx-cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Named Vercel CLI accounts on one device",
   "type": "module",
   "bin": {
@@ -8,14 +8,15 @@
   },
   "files": [
     "dist",
+    "install.sh",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node --eval \"import('node:fs/promises').then(fs => fs.chmod('dist/cli.js', 0o755))\"",
-    "clean": "node --eval \"import('node:fs/promises').then(fs => fs.rm('dist', { recursive: true, force: true }))\"",
-    "test": "npm run clean && npm run build && node --test test/cli.test.mjs",
+    "build": "tsc -p tsconfig.json && bun -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "clean": "bun -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "test": "bun run clean && bun run build && node --test test/cli.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [

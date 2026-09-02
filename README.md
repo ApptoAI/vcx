@@ -18,32 +18,33 @@ on a shared machine.
 
 ## Install
 
-You need Node.js 20 or newer and Vercel CLI.
+One line. It installs Bun if you do not have it, then Vercel CLI and vcx.
 
 ```sh
-npm install --global vercel
-npm install --global https://github.com/akrupa-appto/vcx/archive/refs/tags/v0.2.1.tar.gz
+curl -fsSL https://raw.githubusercontent.com/akrupa-appto/vcx/main/install.sh | sh
 ```
 
-With Bun:
+Set `VCX_REF` to pick a tag, branch, or commit instead of the latest release.
+You still need Node.js 20 or newer, because Vercel CLI runs on Node.
+
+Already have Bun? Install directly:
 
 ```sh
 bun install --global vercel
-bun install --global 'github:akrupa-appto/vcx#v0.2.1'
+bun install --global 'github:akrupa-appto/vcx#v0.3.0'
 ```
 
 Bun `1.4.0` has a bug with remote `.tar.gz` packages. It installs vcx, then
-prints an `unsafe name` error and exits with a failure. The `github:` command
-above avoids that path and exits cleanly. If `vcx --version` already prints
-`0.2.1`, nothing is broken.
+prints an `unsafe name` error and exits with a failure. The `github:` form
+above avoids that path and exits cleanly.
 
 To work from a clone instead:
 
 ```sh
 git clone https://github.com/akrupa-appto/vcx.git
 cd vcx
-npm install
-npm install --global .
+bun install
+bun install --global .
 ```
 
 ## Add accounts
@@ -61,6 +62,7 @@ The first profile becomes active. Switch whenever you need to.
 ```sh
 vcx profile use work
 vcx whoami
+vercel whoami   # same account: vcx links Vercel's global config to the active profile
 ```
 
 Already have a token? `vcx profile add work` opens a hidden prompt. A password
@@ -123,8 +125,23 @@ also removes an inherited `VERCEL_TOKEN` before starting Vercel, so a shell
 variable cannot override the selected account.
 
 This setup keeps login, logout, team selection, and later Vercel config changes
-inside one profile. `vcx logout` logs out the active profile, not Vercel's normal
-global login.
+inside one profile.
+
+vcx also makes the plain `vercel` command follow the active profile. Whenever
+the active profile changes, vcx replaces Vercel's default global config
+directory with a link to that profile's directory:
+
+```text
+Linux   ~/.local/share/com.vercel.cli
+macOS   ~/Library/Application Support/com.vercel.cli
+Windows %APPDATA%\xdg.data\com.vercel.cli   (a junction)
+```
+
+`XDG_DATA_HOME` moves it on every platform, and `VCX_VERCEL_GLOBAL_DIR`
+overrides it. If a real directory already exists there, vcx moves it to
+`<dir>.before-vcx` on the first switch and never deletes it. Removing the
+active profile removes the link. `vcx logout` and `vercel logout` both log out
+the active profile.
 
 Project links still live in `.vercel/project.json` inside each project. Run
 `vcx link` under the right profile if a project points to the wrong account or
@@ -173,13 +190,14 @@ Set `VCX_CONFIG_DIR` to use another location.
 ## Work on vcx
 
 ```sh
-npm ci
-npm test
-npm run typecheck
-npm pack --dry-run
+bun install
+bun run test
+bun run typecheck
+bun pm pack --dry-run
 ```
 
 The test suite uses a fake Vercel executable and temporary profile directories.
 It never reads your real Vercel login. GitHub Actions runs the suite on Linux,
 macOS, and Windows with Node.js 20, 22, and 24. It also checks the real GitHub
-install with Bun 1.4.0, the latest stable release, and the latest canary.
+install with Bun 1.4.0, the latest stable release, and the latest canary, and
+runs `install.sh` on Linux and macOS.
