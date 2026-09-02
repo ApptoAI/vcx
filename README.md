@@ -35,7 +35,7 @@ Already have Bun? Install directly:
 
 ```sh
 bun install --global vercel
-bun install --global 'github:akrupa-appto/vcx#v0.3.0'
+bun install --global 'github:akrupa-appto/vcx#v0.3.1'
 ```
 
 Bun `1.4.0` has a bug with remote `.tar.gz` packages. It installs vcx, then
