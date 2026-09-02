@@ -1,6 +1,6 @@
 {
   "name": "vcx-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Named Vercel CLI accounts on one device",
   "type": "module",
   "bin": {

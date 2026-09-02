@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-09-02
 
 - Verify new profiles from the profile directory instead of the current
   directory. Vercel CLI 59 resolves the team from a linked project in the
