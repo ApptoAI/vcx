@@ -24,8 +24,12 @@ One line. It installs Bun if you do not have it, then Vercel CLI and vcx.
 curl -fsSL https://raw.githubusercontent.com/akrupa-appto/vcx/main/install.sh | sh
 ```
 
-Set `VCX_REF` to pick a tag, branch, or commit instead of the latest release.
-You still need Node.js 20 or newer, because Vercel CLI runs on Node.
+The script keeps vcx and its dependencies in `~/.vcx` with their own lockfile
+and links `vcx` into Bun's bin directory. It does not touch Bun's global
+package list, so a broken global manifest cannot block it. Run it again to
+upgrade. Set `VCX_REF` to pick a tag, branch, or commit instead of the latest
+release, and `VCX_INSTALL_DIR` to move the directory. You still need Node.js
+20 or newer, because Vercel CLI runs on Node.
 
 Already have Bun? Install directly:
 
