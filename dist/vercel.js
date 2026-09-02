@@ -13,6 +13,7 @@ export async function runVercel(args, options = {}) {
         const capture = options.capture === true;
         const child = spawn(binary, vercelArgs, {
             env: childEnv,
+            ...(options.cwd ? { cwd: options.cwd } : {}),
             stdio: capture ? ["inherit", "pipe", "pipe"] : "inherit",
             windowsHide: false,
         });

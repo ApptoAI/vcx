@@ -46,6 +46,7 @@ if (logPath) {
     commandArgs,
     globalConfig: globalConfig ?? null,
     envToken: process.env.VERCEL_TOKEN ?? null,
+    cwd: process.cwd(),
   }) + "\\n");
 }
 
@@ -521,4 +522,39 @@ test("links Vercel's global config directory to the active profile", async (t) =
   const back = run(sandbox, ["profile", "use", "work"]);
   assert.equal(back.status, 0, back.stderr);
   assert.equal(await linkTarget(), await realpath(profileDir("work")));
+});
+
+test("verifies a new profile from its own directory, not the project directory", async (t) => {
+  const sandbox = await createSandbox(t);
+  const projectDir = join(sandbox.root, "project");
+  await mkdir(join(projectDir, ".vercel"), { recursive: true });
+  await writeFile(
+    join(projectDir, ".vercel", "project.json"),
+    JSON.stringify({ orgId: "team_other", projectId: "prj_1" }),
+  );
+
+  const added = spawnSync(
+    process.execPath,
+    [CLI_PATH, "profile", "add", "work", "--token", "tok-work"],
+    { cwd: projectDir, encoding: "utf8", env: childEnv(sandbox) },
+  );
+  assert.equal(added.status, 0, added.stderr);
+
+  const whoami = (await readLog(sandbox)).find(
+    (entry) => entry.commandArgs[0] === "whoami",
+  );
+  assert.ok(whoami, "verification ran whoami");
+  // The staged directory is renamed after verification, so compare prefixes
+  // instead of resolving it. Either form of the path is fine (macOS reports
+  // /private/var for /var).
+  const profilesDir = join(sandbox.configDir, "profiles");
+  const inside = (base) => whoami.cwd.startsWith(base);
+  assert.ok(
+    !inside(projectDir) && !inside(await realpath(projectDir)),
+    `verify ran in the project directory: ${whoami.cwd}`,
+  );
+  assert.ok(
+    inside(profilesDir) || inside(await realpath(profilesDir)),
+    `verify cwd ${whoami.cwd} should be inside the profiles directory`,
+  );
 });
