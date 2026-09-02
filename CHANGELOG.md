@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `install.sh` installs into `~/.vcx` with a fresh manifest instead of
+  `bun install --global`. Bun 1.4.0 fails with `refusing to install dependency
+  with unsafe name` on some machines when the global manifest carries entries
+  from earlier installs, and the new path does not depend on that state.
+
 ## 0.3.0 - 2026-09-02
 
 - Link Vercel's global config directory to the active profile, so a plain
