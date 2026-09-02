@@ -5,6 +5,8 @@ export interface VercelRunOptions {
   globalConfig?: string;
   capture?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** Working directory for Vercel. Defaults to the current directory. */
+  cwd?: string;
 }
 
 export interface VercelRunResult {
@@ -33,6 +35,7 @@ export async function runVercel(
     const capture = options.capture === true;
     const child = spawn(binary, vercelArgs, {
       env: childEnv,
+      ...(options.cwd ? { cwd: options.cwd } : {}),
       stdio: capture ? ["inherit", "pipe", "pipe"] : "inherit",
       windowsHide: false,
     });

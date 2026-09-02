@@ -2,6 +2,8 @@ export interface VercelRunOptions {
     globalConfig?: string;
     capture?: boolean;
     env?: NodeJS.ProcessEnv;
+    /** Working directory for Vercel. Defaults to the current directory. */
+    cwd?: string;
 }
 export interface VercelRunResult {
     code: number;

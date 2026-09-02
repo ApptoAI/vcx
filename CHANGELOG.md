@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Verify new profiles from the profile directory instead of the current
+  directory. Vercel CLI 59 resolves the team from a linked project in the
+  working directory, so adding an account outside that team failed with
+  `Not authorized`.
 - `install.sh` installs into `~/.vcx` with a fresh manifest instead of
   `bun install --global`. Bun 1.4.0 fails with `refusing to install dependency
   with unsafe name` on some machines when the global manifest carries entries

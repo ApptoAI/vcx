@@ -385,9 +385,13 @@ async function forwardToVercel(args, requestedProfile) {
     return result.code;
 }
 async function verifyProfile(profileDir) {
+    // Vercel resolves the team from a linked project in the working directory,
+    // and an account outside that team gets "Not authorized". Verify from the
+    // profile directory instead, which never holds a project link.
     const result = await runVercel(["whoami"], {
         globalConfig: profileDir,
         capture: true,
+        cwd: profileDir,
     });
     if (result.missingBinary)
         throw missingVercelError();
