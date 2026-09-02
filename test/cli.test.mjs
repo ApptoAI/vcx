@@ -3,9 +3,11 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   access,
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -114,7 +116,8 @@ console.log("fake vercel command");
       await rm(root, { recursive: true, force: true });
     });
   }
-  return { root, configDir, logPath, launcherPath };
+  const vercelGlobalDir = join(root, "vercel-data", "com.vercel.cli");
+  return { root, configDir, logPath, launcherPath, vercelGlobalDir };
 }
 
 function childEnv(sandbox, overrides = {}) {
@@ -122,6 +125,7 @@ function childEnv(sandbox, overrides = {}) {
     ...process.env,
     VCX_CONFIG_DIR: sandbox.configDir,
     VCX_VERCEL_BIN: sandbox.launcherPath,
+    VCX_VERCEL_GLOBAL_DIR: sandbox.vercelGlobalDir,
     FAKE_VERCEL_LOG: sandbox.logPath,
   };
   delete env.VERCEL_TOKEN;
@@ -472,3 +476,49 @@ async function waitForLog(sandbox, command) {
   }
   throw new Error(`Timed out waiting for ${command}`);
 }
+
+test("links Vercel's global config directory to the active profile", async (t) => {
+  const sandbox = await createSandbox(t);
+  const globalDir = sandbox.vercelGlobalDir;
+  const backupDir = `${globalDir}.before-vcx`;
+  const profileDir = (name) => join(sandbox.configDir, "profiles", name);
+  const linkTarget = async () => {
+    const info = await lstat(globalDir);
+    assert.equal(info.isSymbolicLink(), true);
+    return await realpath(globalDir);
+  };
+
+  await mkdir(globalDir, { recursive: true });
+  await writeFile(join(globalDir, "auth.json"), JSON.stringify({ token: "old-global" }));
+
+  const first = run(sandbox, ["profile", "add", "work", "--token", "tok-work", "--no-verify"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stderr, /Moved the previous Vercel global config to /);
+  assert.equal(await linkTarget(), await realpath(profileDir("work")));
+  assert.deepEqual(
+    JSON.parse(await readFile(join(backupDir, "auth.json"), "utf8")),
+    { token: "old-global" },
+  );
+
+  const second = run(sandbox, ["profile", "add", "personal", "--token", "tok-personal", "--no-verify"]);
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(await linkTarget(), await realpath(profileDir("work")));
+
+  const use = run(sandbox, ["profile", "use", "personal"]);
+  assert.equal(use.status, 0, use.stderr);
+  assert.match(use.stdout, /^Active profile: personal\nLinked .* to this profile/);
+  assert.doesNotMatch(use.stderr, /Moved the previous/);
+  assert.equal(await linkTarget(), await realpath(profileDir("personal")));
+
+  const removed = run(sandbox, ["profile", "remove", "personal", "--force"]);
+  assert.equal(removed.status, 0, removed.stderr);
+  await assert.rejects(lstat(globalDir), { code: "ENOENT" });
+  assert.deepEqual(
+    JSON.parse(await readFile(join(backupDir, "auth.json"), "utf8")),
+    { token: "old-global" },
+  );
+
+  const back = run(sandbox, ["profile", "use", "work"]);
+  assert.equal(back.status, 0, back.stderr);
+  assert.equal(await linkTarget(), await realpath(profileDir("work")));
+});

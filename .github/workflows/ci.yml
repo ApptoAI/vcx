@@ -25,15 +25,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
+      - run: bun install --frozen-lockfile
+      - run: bun run test
       - run: git diff --exit-code -- dist
-      - run: npm run typecheck
-      - run: npm pack --dry-run
+      - run: bun run typecheck
+      - run: bun pm pack --dry-run
 
   bun-install:
     name: Bun ${{ matrix.bun }} global install
@@ -51,7 +53,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ matrix.bun }}
@@ -60,3 +61,36 @@ jobs:
           bun install --global "github:$GITHUB_REPOSITORY#$GITHUB_SHA"
           expected=$(node --print "require('./package.json').version")
           test "$(vcx --version)" = "$expected"
+
+  install-script:
+    name: install.sh on ${{ matrix.os }} (${{ matrix.bun }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bun: preinstalled
+          - os: macos-latest
+            bun: installed by script
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - if: matrix.bun == 'preinstalled'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - if: runner.os == 'Linux'
+        run: shellcheck install.sh
+      - shell: bash
+        env:
+          VCX_REF: ${{ github.sha }}
+        run: |
+          sh install.sh
+          export PATH="$HOME/.bun/bin:$PATH"
+          expected=$(node --print "require('./package.json').version")
+          test "$(vcx --version)" = "$expected"
+          vercel --version

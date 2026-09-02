@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-09-02
+
+- Link Vercel's global config directory to the active profile, so a plain
+  `vercel` command uses the same account as `vcx`. The old directory is moved
+  to `<dir>.before-vcx`, never deleted. `VCX_VERCEL_GLOBAL_DIR` overrides the
+  directory.
+- Add `install.sh` for a one-line curl install through Bun.
+- Switch development and installs from npm to Bun.
+
 ## 0.2.1 - 2026-08-24
 
 - Use Bun's `github:` dependency form. It avoids the false `unsafe name`

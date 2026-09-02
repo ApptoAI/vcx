@@ -20,6 +20,11 @@ import {
   writeTokenAuth,
 } from "./store.js";
 import { findReservedVercelOption, runVercel } from "./vercel.js";
+import {
+  getVercelGlobalDir,
+  linkVercelGlobalDir,
+  unlinkVercelGlobalDir,
+} from "./vercel-global.js";
 
 const { version: VERSION } = createRequire(import.meta.url)("../package.json") as {
   version: string;
@@ -153,6 +158,7 @@ async function addProfile(args: string[]): Promise<number> {
       });
       installed = true;
       if (firstProfile) warnPlaintextStorage(configDir);
+      if (store.activeProfile === name) await syncVercelGlobalLink(name, configDir);
     });
 
     process.stdout.write(
@@ -219,6 +225,7 @@ async function loginProfile(args: string[]): Promise<number> {
       });
       installed = true;
       if (firstProfile) warnPlaintextStorage(configDir);
+      if (store.activeProfile === name) await syncVercelGlobalLink(name, configDir);
     });
 
     process.stdout.write(
@@ -235,13 +242,18 @@ async function useProfile(args: string[]): Promise<number> {
   const parsed = parseOptions(args);
   const name = expectSingleProfileName(parsed.positionals, "profile use");
   const configDir = getConfigDir();
+  let linked = false;
   await withStoreLock(configDir, async () => {
     const store = await readStore(configDir);
     requireProfile(store.profiles, name);
     store.activeProfile = name;
     await writeStore(store, configDir);
+    linked = await syncVercelGlobalLink(name, configDir);
   });
   process.stdout.write(`Active profile: ${name}\n`);
+  if (linked) {
+    process.stdout.write(`Linked ${getVercelGlobalDir()} to this profile, so plain \`vercel\` uses it too.\n`);
+  }
   return 0;
 }
 
@@ -344,13 +356,45 @@ async function removeProfile(args: string[]): Promise<number> {
     const store = await readStore(configDir);
     requireProfile(store.profiles, name);
     delete store.profiles[name];
-    if (store.activeProfile === name) store.activeProfile = null;
+    const wasActive = store.activeProfile === name;
+    if (wasActive) store.activeProfile = null;
     await removeProfileData(name, configDir, async () => {
       await writeStore(store, configDir);
     });
+    if (wasActive) await syncVercelGlobalLink(null, configDir);
   });
   process.stdout.write(`Removed profile "${name}".\n`);
   return 0;
+}
+
+/**
+ * Keep Vercel's default global config directory pointing at the active
+ * profile. Failure is a warning: vcx commands still work through
+ * `--global-config`, only plain `vercel` would use the wrong account.
+ */
+async function syncVercelGlobalLink(
+  activeProfile: string | null,
+  configDir: string,
+): Promise<boolean> {
+  try {
+    if (activeProfile === null) {
+      await unlinkVercelGlobalDir();
+      return false;
+    }
+    const result = await linkVercelGlobalDir(getProfileDir(activeProfile, configDir));
+    if (result.backupDir) {
+      process.stderr.write(
+        `Moved the previous Vercel global config to ${result.backupDir}.\n`,
+      );
+    }
+    return true;
+  } catch (error) {
+    process.stderr.write(
+      `Warning: could not link ${getVercelGlobalDir()} to the active profile: ${errorMessage(error)}\n` +
+        "Plain `vercel` commands keep their old login. `vcx <command>` still uses the profile.\n",
+    );
+    return false;
+  }
 }
 
 function showPath(args: string[]): number {
@@ -596,6 +640,7 @@ Environment:
   VCX_PROFILE           Override the active profile for one command
   VCX_CONFIG_DIR        Override the vcx data directory
   VCX_VERCEL_BIN        Override the Vercel executable
+  VCX_VERCEL_GLOBAL_DIR Override Vercel's global config directory that vcx links
 
 V1 stores each profile's Vercel config as plaintext with user-only permissions.
 `);
