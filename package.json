@@ -1,6 +1,6 @@
 {
   "name": "vcx-cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Named Vercel CLI accounts on one device",
   "type": "module",
   "bin": {
@@ -29,12 +29,12 @@
   "author": "akrupa-appto",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/akrupa-appto/vcx.git"
+    "url": "git+https://github.com/ApptoAI/vcx.git"
   },
   "bugs": {
-    "url": "https://github.com/akrupa-appto/vcx/issues"
+    "url": "https://github.com/ApptoAI/vcx/issues"
   },
-  "homepage": "https://github.com/akrupa-appto/vcx#readme",
+  "homepage": "https://github.com/ApptoAI/vcx#readme",
   "engines": {
     "node": ">=20"
   },

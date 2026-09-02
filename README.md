@@ -21,7 +21,7 @@ on a shared machine.
 One line. It installs Bun if you do not have it, then Vercel CLI and vcx.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/akrupa-appto/vcx/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ApptoAI/vcx/main/install.sh | sh
 ```
 
 The script keeps vcx and its dependencies in `~/.vcx` with their own lockfile
@@ -35,7 +35,7 @@ Already have Bun? Install directly:
 
 ```sh
 bun install --global vercel
-bun install --global 'github:akrupa-appto/vcx#v0.3.1'
+bun install --global 'github:ApptoAI/vcx#v0.3.2'
 ```
 
 Bun `1.4.0` has a bug with remote `.tar.gz` packages. It installs vcx, then
@@ -45,7 +45,7 @@ above avoids that path and exits cleanly.
 To work from a clone instead:
 
 ```sh
-git clone https://github.com/akrupa-appto/vcx.git
+git clone https://github.com/ApptoAI/vcx.git
 cd vcx
 bun install
 bun install --global .

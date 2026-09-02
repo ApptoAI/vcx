@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 - 2026-09-02
+
+- Move the repository to `ApptoAI/vcx`. The installer and docs point there now.
+  Old `akrupa-appto/vcx` URLs redirect.
+
 ## 0.3.1 - 2026-09-02
 
 - Verify new profiles from the profile directory instead of the current

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs vcx with Bun. Usage:
-#   curl -fsSL https://raw.githubusercontent.com/akrupa-appto/vcx/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ApptoAI/vcx/main/install.sh | sh
 #
 # vcx lives in its own directory (default ~/.vcx) with its own lockfile, so a
 # broken Bun global manifest cannot block the install. Bin links go into
@@ -12,7 +12,7 @@
 #   BUN_INSTALL      Where Bun lives or gets installed. Default: ~/.bun
 set -eu
 
-REPO="akrupa-appto/vcx"
+REPO="ApptoAI/vcx"
 BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
 VCX_INSTALL_DIR="${VCX_INSTALL_DIR:-$HOME/.vcx}"
 
