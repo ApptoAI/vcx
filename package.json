@@ -1,7 +1,7 @@
 {
   "name": "vcx-cli",
   "version": "0.3.2",
-  "description": "Named Vercel CLI accounts on one device",
+  "description": "named vercel cli accounts on one machine. switch without logging out.",
   "type": "module",
   "bin": {
     "vcx": "dist/cli.js"

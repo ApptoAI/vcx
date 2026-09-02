@@ -1,48 +1,51 @@
 # vcx
 
-Vercel CLI keeps one global login. `vcx` gives each account its own Vercel
-config directory, then runs the real `vercel` command against the profile you
-picked.
+vercel cli has one global login. switching accounts means `vercel logout`,
+`vercel login`, pick the team again, and now the other project deploys to the
+wrong place. i got tired of it.
+
+vcx gives every account its own vercel config dir and runs the real `vercel`
+against whichever one you picked. plain `vercel` follows along.
 
 ```sh
+vcx profile login work
+vcx profile login personal
 vcx profile use work
-vcx deploy --prod
+vercel whoami   # work account
 ```
 
-Personal login, work login, separate team state. No more signing in and out to
-change accounts.
+tokens sit on disk as plain files. nothing is encrypted. read
+[where the credentials live](#where-the-credentials-live) before running this
+on a shared box.
 
-This release stores Vercel credentials as plain files. It does not encrypt them.
-Read [where the credentials live](#where-the-credentials-live) before using vcx
-on a shared machine.
+## install
 
-## Install
-
-One line. It installs Bun if you do not have it, then Vercel CLI and vcx.
+one line. installs bun if you don't have it, then vercel cli, then vcx.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ApptoAI/vcx/main/install.sh | sh
 ```
 
-The script keeps vcx and its dependencies in `~/.vcx` with their own lockfile
-and links `vcx` into Bun's bin directory. It does not touch Bun's global
-package list, so a broken global manifest cannot block it. Run it again to
-upgrade. Set `VCX_REF` to pick a tag, branch, or commit instead of the latest
-release, and `VCX_INSTALL_DIR` to move the directory. You still need Node.js
-20 or newer, because Vercel CLI runs on Node.
+everything lands in `~/.vcx` with its own lockfile, and `vcx` gets linked into
+bun's bin dir. bun's global package list stays untouched. bun 1.4.0 keeps
+appending duplicate entries to that list on repeat installs, and once it's
+messed up nothing installs globally anymore, so the script stays out of it.
+run the same line again to upgrade.
 
-Already have Bun? Install directly:
+`VCX_REF` picks a tag, branch, or commit. `VCX_INSTALL_DIR` moves the
+directory. you still need node 20 or newer, vercel cli runs on it.
+
+got bun already and want it the normal way:
 
 ```sh
 bun install --global vercel
 bun install --global 'github:ApptoAI/vcx#v0.3.2'
 ```
 
-Bun `1.4.0` has a bug with remote `.tar.gz` packages. It installs vcx, then
-prints an `unsafe name` error and exits with a failure. The `github:` form
-above avoids that path and exits cleanly.
+use the `github:` form, not a tarball url. bun 1.4.0 installs from a tarball
+fine and then exits with `unsafe name` anyway.
 
-To work from a clone instead:
+from a clone:
 
 ```sh
 git clone https://github.com/ApptoAI/vcx.git
@@ -51,9 +54,7 @@ bun install
 bun install --global .
 ```
 
-## Add accounts
-
-Run Vercel's login flow and give the account a local name.
+## add accounts
 
 ```sh
 vcx profile login personal
@@ -61,109 +62,98 @@ vcx profile login work
 vcx profile list
 ```
 
-The first profile becomes active. Switch whenever you need to.
+`login` opens vercel's normal browser login and saves the result under the
+name you gave it. the first profile becomes active. switch with `use`.
 
 ```sh
 vcx profile use work
 vcx whoami
-vercel whoami   # same account: vcx links Vercel's global config to the active profile
+vercel whoami   # same account. vcx points vercel's global config at the active profile
 ```
 
-Already have a token? `vcx profile add work` opens a hidden prompt. A password
-manager can pipe the token to standard input.
+already have a token? `vcx profile add work` asks for it with a hidden prompt.
+from a password manager:
 
 ```sh
 printf '%s' "$MY_VERCEL_TOKEN" | vcx profile add work --token-stdin
 ```
 
-`--token <value>` also works, but it leaves the token in shell history. The
-default `add` command checks the account with `vercel whoami`. Pass
-`--no-verify` when storing a token offline.
+`--token <value>` works too but lands in shell history. `add` checks the token
+with `vercel whoami` before saving. `--no-verify` skips that if you're offline.
 
-## Commands
+## commands
 
-| Command | What it does |
+| command | what it does |
 | --- | --- |
-| `vcx profile login <name>` | Opens Vercel login for a new profile |
-| `vcx profile add <name>` | Saves an existing token |
-| `vcx profile use <name>` | Changes the active profile |
-| `vcx profile list` | Lists profiles without printing credentials |
-| `vcx profile current` | Prints the selected profile |
-| `vcx profile remove <name>` | Deletes a profile after confirmation |
-| `vcx profile path` | Prints the vcx data directory |
-| `vcx exec -p <name> -- <args>` | Uses another profile for one command |
-| `vcx <args>` | Runs Vercel with the active profile |
+| `vcx profile login <name>` | vercel login flow into a new profile |
+| `vcx profile add <name>` | save an existing token |
+| `vcx profile use <name>` | switch the active profile |
+| `vcx profile list` | list profiles, no credentials printed |
+| `vcx profile current` | print the active profile |
+| `vcx profile remove <name>` | delete a profile (asks first) |
+| `vcx profile path` | print the vcx data dir |
+| `vcx exec -p <name> -- <args>` | run one command under another profile |
+| `vcx <args>` | run vercel under the active profile |
 
-Use another account once without changing the default.
+one-off with a different account:
 
 ```sh
 vcx exec --profile personal -- deploy
+VCX_PROFILE=personal vcx whoami   # same thing
 ```
 
-An environment variable does the same job.
-
-```sh
-VCX_PROFILE=personal vcx whoami
-```
-
-Profile commands have their own namespace. That leaves Vercel's command names
-alone. `vcx list`, `vcx login`, `vcx logout`, and `vcx rm` all go to Vercel
-under the selected profile.
-
-vcx blocks Vercel's `--token` and `--global-config` options because either one
-would bypass the selected profile. Run `vercel` directly when you need those
-options.
-
-## How account isolation works
-
-Each profile is a complete Vercel global-config directory. vcx adds this option
-when it starts Vercel:
-
-```text
---global-config <vcx data directory>/profiles/<name>
-```
-
-Vercel reads and updates its own `auth.json` and `config.json` in that directory.
-vcx does not put saved tokens in child process arguments or `VERCEL_TOKEN`. It
-also removes an inherited `VERCEL_TOKEN` before starting Vercel, so a shell
-variable cannot override the selected account.
-
-This setup keeps login, logout, team selection, and later Vercel config changes
-inside one profile.
-
-vcx also makes the plain `vercel` command follow the active profile. Whenever
-the active profile changes, vcx replaces Vercel's default global config
-directory with a link to that profile's directory:
-
-```text
-Linux   ~/.local/share/com.vercel.cli
-macOS   ~/Library/Application Support/com.vercel.cli
-Windows %APPDATA%\xdg.data\com.vercel.cli   (a junction)
-```
-
-`XDG_DATA_HOME` moves it on every platform, and `VCX_VERCEL_GLOBAL_DIR`
-overrides it. If a real directory already exists there, vcx moves it to
-`<dir>.before-vcx` on the first switch and never deletes it. Removing the
-active profile removes the link. `vcx logout` and `vercel logout` both log out
+profile stuff lives under `vcx profile` so vercel keeps its own names.
+`vcx list`, `vcx login`, `vcx logout`, `vcx rm` go straight to vercel under
 the active profile.
 
-Project links still live in `.vercel/project.json` inside each project. Run
-`vcx link` under the right profile if a project points to the wrong account or
-team. Vercel's `--scope` option passes through normally.
+`--token` and `--global-config` are blocked because they'd bypass the profile.
+call `vercel` directly if you need them.
 
-## Where the credentials live
+## how it works
 
-Run `vcx profile path` to print the directory on your machine. If
-`XDG_CONFIG_HOME` is set, vcx uses `$XDG_CONFIG_HOME/vcx` on every platform.
-Otherwise the defaults are:
+each profile is a full vercel global config dir. vcx starts vercel with
 
 ```text
-Linux   ~/.config/vcx
-macOS   ~/Library/Application Support/vcx
-Windows %LOCALAPPDATA%\vcx
+--global-config <vcx data dir>/profiles/<name>
 ```
 
-The layout looks like this:
+vercel reads and writes its own `auth.json` and `config.json` in there, so
+login, logout, and team selection stay inside the profile. tokens never go into
+child args or `VERCEL_TOKEN`. an inherited `VERCEL_TOKEN` gets dropped before
+vercel starts, so a stray shell var can't hijack the account.
+
+plain `vercel` follows the active profile too. on every switch vcx replaces
+vercel's default global config dir with a link to the profile:
+
+```text
+linux    ~/.local/share/com.vercel.cli
+macos    ~/Library/Application Support/com.vercel.cli
+windows  %APPDATA%\xdg.data\com.vercel.cli   (a junction)
+```
+
+`XDG_DATA_HOME` moves it, `VCX_VERCEL_GLOBAL_DIR` overrides it. if a real dir
+is already there, vcx renames it to `<dir>.before-vcx` on the first switch and
+never touches it again. removing the active profile removes the link.
+`vcx logout` and `vercel logout` both log out the active profile.
+
+project links (`.vercel/project.json`) are per project, not per profile. if a
+project points at the wrong team, run `vcx link` under the right profile.
+`--scope` passes through.
+
+one vercel cli 59 thing. `vercel whoami` inside a linked project resolves the
+team from that project, and an account that's not in the team gets
+`Not authorized`. that's vercel, not vcx. run it from `~` for the plain answer.
+
+## where the credentials live
+
+`vcx profile path` prints it. with `XDG_CONFIG_HOME` set it's
+`$XDG_CONFIG_HOME/vcx` everywhere. otherwise:
+
+```text
+linux    ~/.config/vcx
+macos    ~/Library/Application Support/vcx
+windows  %LOCALAPPDATA%\vcx
+```
 
 ```text
 vcx/
@@ -171,37 +161,30 @@ vcx/
   profiles/
     personal/
       auth.json
-      config.json   created by Vercel when needed
+      config.json   vercel creates this when it needs it
     work/
       auth.json
       config.json
 ```
 
-On Linux and macOS, vcx writes directories with mode `0700` and credential files
-with mode `0600`. Windows uses the access rules inherited from the local app data
-directory.
+dirs are `0700` and credential files `0600` on linux and macos. windows
+inherits from local app data.
 
-Plaintext means any program running as your user can read these files. Keep the
-directory out of Git, cloud sync, logs, and support bundles. Rotate a Vercel
-token if the directory leaks.
+plaintext means anything running as your user can read these. keep the dir out
+of git, cloud sync, logs, and support bundles. if it leaks, rotate the token.
 
-Version 0.2 migrates the old `credentials.json` store on first use. It writes
-each token to the matching profile directory, replaces the old registry with
-`profiles.json`, then deletes the old token file.
+`VCX_CONFIG_DIR` moves the whole thing. 0.2 migrated the old
+`credentials.json` store on first run and deleted it.
 
-Set `VCX_CONFIG_DIR` to use another location.
-
-## Work on vcx
+## work on vcx
 
 ```sh
 bun install
 bun run test
 bun run typecheck
-bun pm pack --dry-run
 ```
 
-The test suite uses a fake Vercel executable and temporary profile directories.
-It never reads your real Vercel login. GitHub Actions runs the suite on Linux,
-macOS, and Windows with Node.js 20, 22, and 24. It also checks the real GitHub
-install with Bun 1.4.0, the latest stable release, and the latest canary, and
-runs `install.sh` on Linux and macOS.
+tests run against a fake vercel binary in temp dirs. they never touch your
+real login. ci covers linux, macos, and windows on node 20, 22, and 24, real
+github installs on bun 1.4.0, latest, and canary, and `install.sh` on linux
+and macos.
